@@ -1,4 +1,8 @@
 %% MVGC demo
+
+% I don't this method is the right one to used. I used random values and it
+% gave me p<0.05. So, I can't trust this method
+
 %
 % Demonstrates typical usage of the MVGC toolbox on generated VAR data for a
 % 5-node network with known causal structure (see <var5_test.html |var5_test|>).
@@ -55,6 +59,10 @@
 %
 %% Parameters
 
+addpath('C:\Users\user\Dropbox\Semester3\Neuro Inspired Engineering\Project\mvgc_v1.0');
+startup;
+
+
 ntrials   = 10;     % number of trials
 nobs      = 1000;   % number of observations per trial
 
@@ -100,6 +108,10 @@ SIGT = eye(nvars);   % cov(Y - Y') where Y is true [y1(t), y2(t)..., y1(t)] and 
 ptic('\n*** var_to_tsdata... ');
 X = var_to_tsdata(AT,SIGT,nobs,ntrials);   % 5 variables, 1000 time points, 10 trials
 ptoc;
+%X = X(:,:,1);
+b = rand(1,1000);
+a = [0.1 0.2 0.3 b(1:997)];
+X = 50*[a; rand(1,1000); b; rand(1,1000); rand(1,1000) ]; % checking this test for random values
 
 %% Model order estimation (<mvgc_schema.html#3 |A2|>)
 
@@ -210,6 +222,64 @@ title(['Significant at p = ' num2str(alpha)])
 cd = mean(F(~isnan(F)));
 
 fprintf('\ncausal density = %f\n',cd);
+
+%%   I will compare 1st with the rest 4
+p1_rej = 0;
+p2_rej = 0;
+p3_rej = 0;
+p4_rej = 0;
+
+p1 =  ones(5,1);
+p2 =  ones(5,1);
+p3=  ones(5,1);
+p4=  ones(5,1);
+
+
+
+for i = 1:5
+    
+    x = X(1,:)';
+    y = X(i,:)';
+
+    [F, c_v,p] = granger_cause_orig(x,y,0.05,5);
+    if (p<=0.05)
+        p1_rej = p1_rej +1;
+    end
+    p1(i) = p;
+
+
+    [F, c_v,p] = granger_cause(x,y,0.05,5);
+    if (p<=0.05)
+        p2_rej = p2_rej +1;
+    end
+    p2(i) = p;
+
+
+    [F, c_v,~,p] = granger_cause_1(x,y,0.05,5,1,5,1,1);
+    if (p<=0.05)
+         p3_rej = p3_rej +1;
+    end
+    p3(i) = p;
+
+    [F, c_v,p] = granger_cause_no_intrcp(x,y,0.05,5);
+    if (p<=0.05)
+        p4_rej = p4_rej +1;
+    end
+    p4(i) = p;
+
+end
+figure;
+plot(p1);
+hold on;
+plot(p2);
+hold on;
+plot(p3);
+hold on;
+plot(p4);
+legend;
+
+
+
 
 %% Granger causality calculation: frequency domain  (<mvgc_schema.html#3 |A14|>)
 
