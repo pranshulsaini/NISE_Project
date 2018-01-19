@@ -2,7 +2,9 @@ function [ F, c_v,  Fprob , Fprob_Corrected,   dAIC, dBIC  , chosen_x_lag, chose
           =  ...
          granger_cause_1(x, y, alpha, max_x_lag, use_best_x, ...
                                       max_y_lag, use_best_y, firstYlag)
-%
+% This code claims to remove more-null-rejection problem. I did not modify anything
+
+
 % Granger Causality test
 % Does Y Granger Cause X?  
 %
