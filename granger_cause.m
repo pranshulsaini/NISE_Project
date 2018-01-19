@@ -1,4 +1,7 @@
-%function [F,c_v, p] = granger_cause(x,y,alpha,max_lag)
+function [val, P] = granger_cause(y,x,alpha,max_lag)
+% I added the correction for multiple comparison
+% I also corrected the loop to calculate y_lag for optimum BIC. 
+
 % [F,c_v] = granger_cause(x,y,alpha,max_lag)
 % Granger Causality test
 % Does Y Granger Cause X?
@@ -33,11 +36,13 @@
 %   suggestions
 
 
-y = rand(1000,1);
-x = rand(1000,1);
-alpha = 0.05;
-max_lag = 20;
+% y = rand(1000,1);
+% x = rand(1000,1);
+% alpha = 0.05;
+% max_lag = 20;
 
+
+% we will be checking if chan1 causes chan2 or not
 
 %Make sure x & y are the same length
 if (length(x) ~= length(y))
@@ -58,12 +63,18 @@ if (b>a)
     y = y';
 end
 
+%         x = x + 10*rand(size(x,1),1);
+%         y = y + 10*rand(size(y,1),1);
 
 
 %Make sure max_lag is >= 1
 if max_lag < 1
     error('max_lag must be greater than or equal to one');
 end
+
+%making the data stationary
+%         x = diff(x,3);
+%         y = diff(y,3);
 
 %First find the proper model specification using the Bayesian Information
 %Criterion for the number of lags of x
@@ -87,15 +98,18 @@ while i <= max_lag
     %Apply the regress function. b = betahat, bint corresponds to the 95%
     %confidence intervals for the regression coefficients and r = residuals
     [b,bint,r] = regress(ystar,xstar);
-    
+
+%             eig_value = eig(xstar);
+%             max(eig_value)/min(eig_value)
+
     %Find the bayesian information criterion, under the assumption that the model errors or disturbances are independent and identically distributed according to a normal distribution and that the boundary condition that the derivative of the log likelihood with respect to the true variance is zero,
     BIC(i,:) = T*log(r'*r/T) + (i+1)*log(T);
-    
+
     %Put the restricted residual sum of squares in the RSS_R vector
     RSS_R(i,:) = r'*r;
-    
+
     i = i+1;
-    
+
 end
 
 [dummy,x_lag] = min(BIC);
@@ -110,7 +124,7 @@ RSS_U = zeros(max_lag,1);
 
 i = 1;
 while i <= max_lag
-    
+
     ystar = x(i+x_lag:T,:);   % In my opinion, there will not be 1 in the first argument
     xstar = [ones(T-(i+x_lag)+1,1)  zeros(T-(i+x_lag)+1,x_lag+i)];
     %Populate the xstar matrix with the corresponding vectors of lags of x
@@ -128,20 +142,23 @@ while i <= max_lag
     %Apply the regress function. b = betahat, bint corresponds to the 95%
     %confidence intervals for the regression coefficients and r = residuals
     [b,bint,r] = regress(ystar,xstar);
-    
+
+%             eig_value = eig(xstar);
+%             max(eig_value)/min(eig_value)
+
     %Find the bayesian information criterion
     BIC(i,:) = T*log(r'*r/T) + (i+1)*log(T);
-    
+
     RSS_U(i,:) = r'*r;
-    
+
     i = i+1;
-    
+
 end
 
-[dummy,y_lag] =min(BIC);
+[dummy,y_lag] = min(BIC);
 
 %The numerator of the F-statistic
-v1 = y_lag % dof of numerator
+v1 = y_lag; % dof of numerator
 F_num = ((RSS_R(x_lag,:) - RSS_U(y_lag,:))/v1);
 
 %The denominator of the F-statistic
@@ -158,5 +175,8 @@ c_v = finv(1-alpha,y_lag,(T-(x_lag+y_lag+1)));
 p = 1 - fcdf(F,v1,v2);
 
 comparisons = 1 + ((1-p)^2)*log(max_lag);
-p = 1.0 - ( 1.0 - p)^comparisons  ; %multiple comparison correction
+P = 1.0 - ( 1.0 - p)^comparisons  ; %multiple comparison correction
+
+val = F-c_v;  % measure for chan1 causing chan2
+
 
