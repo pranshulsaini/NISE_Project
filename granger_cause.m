@@ -1,4 +1,4 @@
-function [val, P] = granger_cause(y,x,alpha,max_lag)
+function [val, p, p_corr, x_lag, y_lag, BIC_R, BIC_U, F_den] = granger_cause(y,x,alpha,x_lag0, y_lag0, x_max_lag, y_max_lag, user_spec, down_samp)
 % I added the correction for multiple comparison
 % I also corrected the loop to calculate y_lag for optimum BIC. 
 
@@ -44,6 +44,13 @@ function [val, P] = granger_cause(y,x,alpha,max_lag)
 
 % we will be checking if chan1 causes chan2 or not
 
+%Downsampling
+if down_samp 
+    x = downsample(x,4,3);  % phase offset 3
+    y = downsample(y,4,3); % phase offset 3
+end
+
+
 %Make sure x & y are the same length
 if (length(x) ~= length(y))
     error('x and y must be the same length');
@@ -68,7 +75,7 @@ end
 
 
 %Make sure max_lag is >= 1
-if max_lag < 1
+if ((x_max_lag < 1)||(y_max_lag < 1))
     error('max_lag must be greater than or equal to one');
 end
 
@@ -81,12 +88,21 @@ end
 
 T = length(x);
 
-BIC = zeros(max_lag,1);
+BIC_R = zeros(x_max_lag,1);
 
 %Specify a matrix for the restricted RSS
-RSS_R = zeros(max_lag,1); 
+RSS_R = zeros(x_max_lag,1); 
+
+ystar_R_len = zeros(x_max_lag,1);    
+
 i = 1;
-while i <= max_lag
+
+if user_spec
+    i = x_lag0;
+    x_max_lag = x_lag0;
+end
+
+while i <= x_max_lag
     ystar = x(i+1:T,:);
     xstar = [ones(T-i,1) zeros(T-i,i)];
     %Populate the xstar matrix with the corresponding vectors of lags
@@ -102,8 +118,11 @@ while i <= max_lag
 %             eig_value = eig(xstar);
 %             max(eig_value)/min(eig_value)
 
+    n_obs = length(ystar);
+    ystar_R_len(i) = n_obs;
+
     %Find the bayesian information criterion, under the assumption that the model errors or disturbances are independent and identically distributed according to a normal distribution and that the boundary condition that the derivative of the log likelihood with respect to the true variance is zero,
-    BIC(i,:) = T*log(r'*r/T) + (i+1)*log(T);
+    BIC_R(i,:) = n_obs*log(r'*r/n_obs) + (i+1)*log(n_obs);
 
     %Put the restricted residual sum of squares in the RSS_R vector
     RSS_R(i,:) = r'*r;
@@ -112,18 +131,33 @@ while i <= max_lag
 
 end
 
-[dummy,x_lag] = min(BIC);
+
+[dummy,x_lag] = min(BIC_R);
+
+if user_spec
+    x_lag = x_lag0;
+end
+
 
 %First find the proper model specification using the Bayesian Information
 %Criterion for the number of lags of y
 
-BIC = zeros(max_lag,1);
 
+BIC_U = zeros(y_max_lag,1);
 %Specify a matrix for the unrestricted RSS
-RSS_U = zeros(max_lag,1);
+RSS_U = zeros(y_max_lag,1);
+
+ystar_U_len = zeros(y_max_lag,1);  % will be used in DOF of numerator
+
 
 i = 1;
-while i <= max_lag
+
+if user_spec
+    i = y_lag0;
+    y_max_lag = y_lag0;
+end
+
+while i <=y_max_lag
 
     ystar = x(i+x_lag:T,:);   % In my opinion, there will not be 1 in the first argument
     xstar = [ones(T-(i+x_lag)+1,1)  zeros(T-(i+x_lag)+1,x_lag+i)];
@@ -133,6 +167,7 @@ while i <= max_lag
         xstar(:,j+1) = x(i+x_lag-j:T-j,:);
         j = j+1;
     end
+    
     %Populate the xstar matrix with the corresponding vectors of lags of y
     j = 1;
     while j <= i
@@ -146,37 +181,90 @@ while i <= max_lag
 %             eig_value = eig(xstar);
 %             max(eig_value)/min(eig_value)
 
+    n_obs = length(ystar);
+    ystar_U_len(i) = n_obs;
+
+
     %Find the bayesian information criterion
-    BIC(i,:) = T*log(r'*r/T) + (i+1)*log(T);
+    BIC_U(i,:) = n_obs*log(r'*r/n_obs) + (i+1)*log(n_obs);
 
     RSS_U(i,:) = r'*r;
+
 
     i = i+1;
 
 end
 
-[dummy,y_lag] = min(BIC);
+[dummy,y_lag] = min(BIC_U);
+
+
+if user_spec
+    y_lag = y_lag0;
+end
+
 
 %The numerator of the F-statistic
 v1 = y_lag; % dof of numerator
-F_num = ((RSS_R(x_lag,:) - RSS_U(y_lag,:))/v1);
+if (ystar_U_len(y_lag) == ystar_R_len(x_lag) )
+    % no missing data
+    % warning(' N constant = %d  ',  Nvalid_U(y_lag)   );
+    F_num = ((RSS_R(x_lag,:) - RSS_U(y_lag,:))/v1);
+
+else
+    % we have missing data
+    Tave = ( ystar_U_len(y_lag) + ystar_R_len(x_lag) )  / 2.0 ;
+    tmp_MSS_R =  RSS_R(x_lag) / ystar_R_len(x_lag);
+    tmp_MSS_U =  RSS_U(y_lag) / ystar_U_len(y_lag);
+    
+    F_num  =   ( Tave * ( tmp_MSS_R -  tmp_MSS_U) ) / v1 ;
+    
+end
+
 
 %The denominator of the F-statistic
-v2 = T-(x_lag+y_lag+1); % dog of denomenator
+v2 = ystar_U_len(y_lag)-(x_lag+y_lag+1); % dog of denomenator, Modified by looking at granger_cause_1
 F_den = RSS_U(y_lag,:)/v2;
 
+% sanity checks
+if (F_num < 0 )
+    warning('F num is negative %8.3e', F_num);
+end
+
+if (F_den < 0 )
+    warning('F den  is negative %8.3E', F_den);
+end
+
+% 
+% x_lag
+% y_lag
+% ystar_U_len(y_lag)
+% v2
+
 %The F-Statistic
-F = F_num/F_den;
+if (F_den ~= 0 )  % sanity check
+    F = F_num/F_den;
 
-alpha = 1 - (1-alpha)^(1/y_lag);  % for multiple channel correction
+    alpha = 1 - (1-alpha)^(1/y_lag);  % for multiple comparison correction
 
-c_v = finv(1-alpha,y_lag,(T-(x_lag+y_lag+1)));
+    c_v = finv(1-alpha,v1,v2);
 
-p = 1 - fcdf(F,v1,v2);
+    p = 1 - fcdf(F,v1,v2);
 
-comparisons = 1 + ((1-p)^2)*log(max_lag);
-P = 1.0 - ( 1.0 - p)^comparisons  ; %multiple comparison correction
+    comparisons = 1 + ((1-p)^2)*log(y_max_lag);
+    p_corr = 1.0 - ( 1.0 - p)^comparisons  ; %multiple comparison correction
 
-val = F-c_v;  % measure for chan1 causing chan2
+    val = F;%-c_v;  % measure for chan1 causing chan2
+
+else 
+    F = 0;
+    alpha = 0;
+    c_v = 0;
+    p = 0;
+    p_corr = 0;
+    val = 0;
+end
+
+
+
 
 
