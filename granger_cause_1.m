@@ -1,4 +1,4 @@
-function [ F, c_v,  Fprob , Fprob_Corrected,   dAIC, dBIC  , chosen_x_lag, chosen_y_lag ] ...
+function [ F, c_v,  Fprob , Fprob_Corrected, BIC_R, BIC_U  , chosen_x_lag, chosen_y_lag ] ...
           =  ...
          granger_cause_1(x, y, alpha, max_x_lag, use_best_x, ...
                                       max_y_lag, use_best_y, firstYlag)
@@ -568,8 +568,8 @@ while i <= max_y_lag
 
     
    % in case we plot the models, we save tmp_Yhat_X's 
-    Ystar_y_arr(First_Obs:N,i+1-firstYlag) =  ystar     ;
-     Yhat_y_arr(First_Obs:N,i+1-firstYlag) =  xstar * b ;
+    Ystar_y_arr(First_Obs:N,i+1-firstYlag) =  ystar ;
+    Yhat_y_arr(First_Obs:N,i+1-firstYlag) =  xstar * b ;
     
     i = i+1;
 end
