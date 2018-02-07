@@ -36,38 +36,35 @@ labels = [-1*ones(n_no_error,1); 1*ones(n_error,1)];
 clc;
 avg_no_error = mean(EEG_epo_noError.data,3);  % mean across all trials
 %avg_no_error = EEG_epo_noError.data;
-cz_avg_no_error = avg_no_error(20,:); %Cz channel is at the center of the head. index is 20
+cz_avg_no_error = avg_no_error(21,:); %Cz channel is at the center of the head. index is 20
 
 avg_error = mean(EEG_epo_Error.data,3); % mean across all trials
 %avg_error = EEG_epo_Error.data;
-cz_avg_error = avg_error(20,:);   %Cz channel is at the center of the head. index is 20
+cz_avg_error = avg_error(21,:);   %Cz channel is at the center of the head. index is 20
 
 figure;
 plot(EEG_epo_noError.times,cz_avg_no_error);
 hold on;
 plot(EEG_epo_Error.times,cz_avg_error);
 legend('No error','error')
-title('ERP time course of channel Cz')
+title('ERP time course of channel C4')
 xlabel('time locked to key press (ms)') % x-axis label
 ylabel('Signal (microvolts') % y-axis label
 
-%% Forming stationary data (not required)
-figure;
-cz_avg_no_error_diff = diff(cz_avg_no_error,2);
-cz_avg_error_diff = diff(cz_avg_error ,2);
-plot(EEG_epo_noError.times(3:end),cz_avg_no_error_diff);
-hold on;
-plot(EEG_epo_Error.times(3:end),cz_avg_error_diff);
 
-min1 =  min(cz_avg_no_error);
-min2 =  min(cz_avg_error);
-
+%% Sanity check for granger causality
+% Even for random values, F makes dip after a certain time lag. This is just noise. SO, I will only use P now onwards for granger causality
+noise1 =  rand(1,1000);
+noise2 =  rand(1,1000);
+[cz_caus,cz_P,cz_P_corr, cz_x_lag, cz_y_lag_init, cz_BIC_R, cz_BIC_U, F_den] = granger_cause(noise1,noise2, 0.05, 5, 5, 5, 20,0,1); % transpose make channels as columns
+            
 figure;
-cz_avg_no_error_diff = diff(log(cz_avg_no_error - min1 + 1),2);
-cz_avg_error_diff = diff(log(cz_avg_error - min2 + 1) ,2);
-plot(EEG_epo_noError.times(3:end),cz_avg_no_error_diff);
+subplot(2,1,1);
+plot(cz_BIC_R);
 hold on;
-plot(EEG_epo_Error.times(3:end),cz_avg_error_diff);
+
+subplot(2,1,2);
+plot(cz_BIC_U);
 
 
 
@@ -183,7 +180,7 @@ for i =1:100   % I am multiplying in the for loop for 0.01. So it is 0.01 change
     end
 end
 
-avg_class_error = mean(class_error,3);  % doing mean across the k fold 10 values
+avg_class_error = median(class_error,3);  % doing mean across the k fold 10 values
 lambda_set = 0.01:0.01:1.0;
 [M,I] = min(avg_class_error); %it will give the index of min value in the array
 [~,n] = min(M);  % n is the column containing the min value of the matrix. This is the number of features
@@ -260,7 +257,7 @@ for j = 1:round(total_trials/10) % across all the features
 end
 
 
-avg_class_error = mean(class_error,2);  % doing mean across the k fold 10 values
+avg_class_error = median(class_error,2);  % doing mean across the k fold 10 values
 [~,n_conn_feat] = min(avg_class_error); %it will give the index of min value in the array
 
 
@@ -277,23 +274,46 @@ ylabel('fisher score'); % x-axis label
 xlabel('ranked features'); % y-axis label
 
 
-conn_mat_final_mean = squeeze(mean(conn_mat_final))';  % needed for topoplot
+conn_mat_final_mean_no_error = squeeze(median(conn_mat_final(1:n_no_error,:)))';  % needed for topoplot
+conn_mat_final_mean_error = squeeze(median(conn_mat_final(n_no_error+1:total_trials,:)))';  % needed for topoplot
 
 %% Plotting the connection along with their correlation strengths
 ds.chanPairs = locs_conn;
-ds.connectStrength = conn_mat_final_mean;
+ds.connectStrength = conn_mat_final_mean_no_error;
+figure;
+subplot(1,2,1);
+topoplot_connect(ds, EEG.chanlocs);
+title('No-error connectivity map');
+colorbar;
+
+ds.connectStrength = conn_mat_final_mean_error;
+subplot(1,2,2);
+topoplot_connect(ds, EEG.chanlocs);
+title('Error connectivity map');
+colorbar;
+
+%% Plotting the connection along with their Fisher score
+best_fisher_conn = zeros(n_conn_feat,1);
+for i = 1: n_conn_feat
+    best_fisher_conn(i) = conn_fish_val(locs_conn(i,1),locs_conn(i,2));
+end
+ds.chanPairs = locs_conn;
+ds.connectStrength = best_fisher_conn;
 figure;
 topoplot_connect(ds, EEG.chanlocs);
+title('Fisher scores Topoplot');
 colorbar;
+
+ 
 
 
 %% Loading data for granger causality
 % clc;
 % EEG = pop_loadset('filename','calibration.set','filepath','../data/');
 % 
-% EEG_epo_noError = pop_epoch(EEG,{'S  4'},[0.0 0.5]); % retrieving the desired epoch with reference as S4 when there was no error
+% EEG_epo_noError = pop_epoch(EEG,{'S  4'},[0.0 1.0]); % retrieving the desired epoch with reference as S4 when there was no error
 % 
-% EEG_epo_Error = pop_epoch(EEG,{'S  5'},[0.0 0.5]); % retrieving the desired epoch with reference as S5 when there was error
+% EEG_epo_Error = pop_epoch(EEG,{'S  5'},[0.0 1.0]); % retrieving the desired epoch with reference as S5 when there was error
 % 
 % data_noError = EEG_epo_noError.data;
 % data_Error = EEG_epo_Error.data;
@@ -304,20 +324,70 @@ colorbar;
 % n_error = size(EEG_epo_Error.data, 3);
 % total_trials = n_no_error + n_error; 
 
+%% Forming stationary data. Example shown for the average for Cz channel
+%https://machinelearningmastery.com/time-series-data-stationary-python/
+
+clc;
+sample_data_no_err = data(20,:,1);
+sample_data_err = data(20,:,200);
+[~,pValue] = adftest(sample_data_no_err );
+fprintf('The p value for the original no-error data is: %f \n', pValue);
+[~,pValue] = adftest(sample_data_err);
+fprintf('The p value for the original error data is: %f \n', pValue);
+
+sample_data_no_error_diff = diff(sample_data_no_err,1);
+sample_data_error_diff = diff(sample_data_err ,1);
+[~,pValue] = adftest(sample_data_no_error_diff);
+fprintf('The p value for the differenced no-error data is: %f \n', pValue);
+[~,pValue] = adftest(sample_data_error_diff);
+fprintf('The p value for the differenced error data is: %f \n', pValue);
+
+figure;
+subplot(2,1,1)
+p1 = plot(EEG_epo_Error.times,sample_data_no_err );
+hold on;
+p2 = plot(EEG_epo_Error.times,sample_data_err);
+xlabel('time locked to key press (ms)') % x-axis label
+ylabel('Signal (microvolts') % y-axis label
+legend([p1 p2],'no-error','error')
+
+subplot(2,1,2)
+p1= plot(EEG_epo_Error.times(2:end),sample_data_no_error_diff );
+hold on;
+p2 = plot(EEG_epo_Error.times(2:end),sample_data_error_diff);
+xlabel('time locked to key press (ms)') % x-axis label
+ylabel('Signal (microvolts') % y-axis label
+legend([p1 p2],'no-error','error')
+
+%making the whole data stationary.
+% difference of order 1 is sufficient for individual trials
+order = 1;
+pValues = ones(n_chan,total_trials);
+data_st = zeros(n_chan, size(data,2)-order, total_trials);
+for i = 1:n_chan
+    for j = 1: total_trials
+        data_st(i,:,j) =  diff(data(i,:,j),order);
+        [~,pValues(i,j)] = adftest(data_st(i,:,j));
+    end
+end
+
+data_noError_st = data_st(:,:,1:190);
+data_Error_st = data_st(:,:,191:300);
+
 %% Granger causality feature matrix
 
 clc;
-x_max_lag = 5;
-y_max_lag = 5;
-downsample = 0;
+x_max_lag = 15;
+y_max_lag = 15;
+down_samp = 0;
 caus_mat = zeros(total_trials, n_chan, n_chan);  % the more the value, the more the causality
 P = zeros(total_trials, n_chan, n_chan); % will indicate the significance of the correlation value 
 P_corr = zeros(total_trials, n_chan, n_chan); % will indicate the significance of the correlation value
 x_lag = zeros(total_trials, n_chan, n_chan);
 y_lag = zeros(total_trials, n_chan, n_chan);
 
-data_noError_med = squeeze(median(data_noError,3)); 
-data_Error_med = squeeze(median(data_Error,3));
+data_noError_med = squeeze(median(data_noError_st,3)); 
+data_Error_med = squeeze(median(data_Error_st,3));
 caus_mat_init = zeros(total_trials,n_chan, n_chan);  % the more the value, the more the causality
 P_init = zeros(total_trials, n_chan, n_chan); % will indicate the significance of the correlation value 
 P_corr_init = zeros(total_trials, n_chan, n_chan); % will indicate the significance of the correlation value
@@ -327,10 +397,10 @@ BIC_R_init = zeros(total_trials,x_max_lag, n_chan, n_chan);
 BIC_U_init = zeros(total_trials,y_max_lag, n_chan, n_chan);
 
 %for input matrix of corrcoed, columnsrepresent random variables and the rows represent observations
-for i = 1: size(data_Error,1)    % chan1
-    for j =  1: size(data_Error,1)  % chan2
+for i = 1: size(data_Error_st,1)    % chan1
+    for j =  1: size(data_Error_st,1)  % chan2
         for k = 1:total_trials
-            [caus_mat_init(k,i,j),P_init(k,i,j),P_corr_init(k,i,j), x_lag_init(k,i,j), y_lag_init(k,i,j), BIC_R_init(k,:,i,j), BIC_U_init(k,:,i,j),F_den] = granger_cause(squeeze(data(i,:,k)),squeeze(data(j,:,k)), 0.05, 5, 5, x_max_lag, y_max_lag,0,downsample); % transpose make channels as columns
+            [caus_mat_init(k,i,j),P_init(k,i,j),P_corr_init(k,i,j), x_lag_init(k,i,j), y_lag_init(k,i,j), BIC_R_init(k,:,i,j), BIC_U_init(k,:,i,j),F_den] = granger_cause(squeeze(data_st(i,:,k)),squeeze(data_st(j,:,k)), 0.05, 5, 5, x_max_lag, y_max_lag,0,down_samp); % transpose make channels as columns
             
             if (F_den ~= 0)
                 past_caus_mat_init = caus_mat_init(k,i,j);
@@ -350,23 +420,37 @@ for i = 1: size(data_Error,1)    % chan1
                 BIC_R_init(k,:,i,j) = past_BIC_R_init ;
                 BIC_U_init(k,:,i,j) = past_BIC_U_init;
                 
-            end            
+            end
+            if isnan(P_init(k,i,j)) == 1
+                fprintf('P NaN');
+                break
+            end
         end
+        if isnan(P_init(k,i,j)) == 1
+            fprintf('P NaN');
+            break
+        end
+    end
+    if isnan(P_init(k,i,j)) == 1
+        fprintf('P NaN');
+        break
     end
 end
 
 x_lag_med = round(squeeze(median(x_lag_init,1)));
 y_lag_med = round(squeeze(median(y_lag_init,1)));
 
-%% plotting BIC 
-t_x = 3.90625 * [1:x_max_lag];
-t_y = 3.90625 * [1:y_max_lag];
+save('15_15' );
 
-if downsample
-    t_x = 4* t_x;
-    t_y = 4* t_y;
+%% plotting BIC 
+factor = 3.90625;
+
+if down_samp
+    factor = 4 * 3.90625;
 end
 
+t_x = factor * [1:x_max_lag];
+t_y = factor * [1:y_max_lag];
 
 BIC_R_mean_no_err = squeeze(median(BIC_R_init(1:n_no_error,:,:,:),1));
 BIC_U_mean_no_err = squeeze(median(BIC_U_init(1:n_no_error,:,:,:),1));
@@ -374,47 +458,154 @@ BIC_R_mean_err = squeeze(median(BIC_R_init(n_no_error+1:total_trials,:,:,:),1));
 BIC_U_mean_err = squeeze(median(BIC_U_init(n_no_error+1:total_trials,:,:,:),1));
 
 figure;
-
+subplot(2,1,1);
 for i = 1:size(data_Error,1)    % chan1
     for j = 1:size(data_Error,1)  % chan2
         
-        plot(t_x, BIC_R_mean_no_err(:,i,j), 'b');
-        hold on
-        plot(t_y, BIC_U_mean_no_err(:,i,j), 'r');
-        hold on
-
+        if i~=j
+            p1 = plot(t_x, BIC_R_mean_no_err(:,i,j), 'b');
+            hold on
+            p2 = plot(t_y, BIC_U_mean_no_err(:,i,j), 'r');
+            hold on
+        end
     end
 end
 xlabel('Lag (ms)');
 ylabel('BIC');
 title('No Error Trials')
+legend([p1 p2],'Auto-reg','Causal')
 
-figure;
+subplot(2,1,2);
 for i = 1:size(data_Error,1)    % chan1
     for j = 1: size(data_Error,1)  % chan2
-
-        plot(t_x, BIC_R_mean_err(:,i,j), 'k');
-        hold on
-        plot(t_y, BIC_U_mean_err(:,i,j), 'm');
-        hold on
+        if i~=j
+            p1 = plot(t_x, BIC_R_mean_err(:,i,j), 'k');
+            hold on
+            p2 = plot(t_y, BIC_U_mean_err(:,i,j), 'm');
+            hold on
+        end
         
     end
 end
 xlabel('Lag (ms)');
 ylabel('BIC');
 title(' Error Trials')
+legend([p1 p2],'Auto-reg','Causal')
 
 figure;
-hist(x_lag_med(:));
+subplot(2,1,1);
+hist(factor*x_lag_med(:));
 xlabel('Lag (ms)');
 ylabel('Count');
 title(' Autoregression')
 
-figure;
-hist(y_lag_med(:));
+subplot(2,1,2);
+hist(factor*y_lag_med(:));
 xlabel('Lag (ms)');
 ylabel('Count');
 title(' Causal Entity')
+
+
+%% plotting p distribution across non-diagonal elements 
+% This is to check the causality in the data
+P_init_off_diag_no_error = zeros(n_no_error, n_chan*n_chan-n_chan);
+for i = 1: n_no_error
+    idx = eye(n_chan,n_chan);
+    Y = squeeze(P_init(i,:,:));
+    P_init_off_diag_no_error(i,:) = Y(~idx);
+end
+
+figure;
+subplot(2,1,1);
+hist(P_init_off_diag_no_error(:))
+title('P-dist for no-error trials')
+
+P_init_off_diag_error = zeros(n_error, n_chan*n_chan-n_chan);
+for i = 1: n_error
+    idx = eye(n_chan,n_chan);
+    Y = squeeze(P_init(n_no_error+i,:,:));
+    P_init_off_diag_error(i,:) = Y(~idx);
+end
+
+subplot(2,1,2);
+hist(P_init_off_diag_error(:))
+title('P-dist for error trials')
+
+figure;
+P_init_med_no_error = squeeze(median(P_init(1:n_no_error,:,:),1));
+idx = eye(n_chan,n_chan);
+P_init_off_diag_no_error = P_init_med_no_error(~idx);
+subplot(2,1,1);
+hist(P_init_off_diag_no_error(:))
+title('P-dist for median across no-error trials')
+
+P_init_med_error = squeeze(median(P_init(n_no_error+1:total_trials,:,:),1));
+idx = eye(n_chan,n_chan);
+P_init_off_diag_error = P_init_med_error(~idx);
+subplot(2,1,2);
+hist(P_init_off_diag_error(:))
+title('P-dist for median across error trials')
+
+
+% for the channel showed least median p value. Let's check across trials
+P_init_med  = squeeze(median(P_init,1));
+[~,indx_minP] = maxNvalues(-P_init_med,1);
+
+figure;
+subplot(2,2,1);
+for i = 1:n_no_error    % chan1
+     
+    p1 = plot(t_x, BIC_R_init(i,:,indx_minP(1),indx_minP(2)), 'b');
+    hold on
+
+end
+xlabel('Lag (ms)');
+ylabel('BIC');
+title('minP chan comb, No Error Trials')
+legend(p1,'Auto-reg')
+
+subplot(2,2,2);
+for i = 1:n_no_error    % chan1
+     
+    p2 = plot(t_y, BIC_U_init(i,:,indx_minP(1),indx_minP(2)), 'r');
+    hold on
+
+end
+xlabel('Lag (ms)');
+ylabel('BIC');
+title('minP chan comb, No Error Trials')
+legend( p2,'Causal')
+
+subplot(2,2,3);
+for i = n_no_error+1: total_trials    % chan1
+    p1 = plot(t_x, BIC_R_init(i,:,indx_minP(1),indx_minP(2)),'b');
+    hold on
+end
+xlabel('Lag (ms)');
+ylabel('BIC');
+title(' minP chan comb, Error Trials')
+legend(p1,'Auto-reg')
+
+subplot(2,2,4);
+for i = n_no_error+1: total_trials    % chan1
+    p2 = plot(t_y, BIC_U_init(i,:,indx_minP(1),indx_minP(2)),'r');
+    hold on
+end
+xlabel('Lag (ms)');
+ylabel('BIC');
+title(' minP chan comb, Error Trials')
+legend(p2,'Causal')
+
+
+figure;
+subplot(2,1,1);
+plot(P_init(:,indx_minP(1),indx_minP(2)));
+xlabel('trial number');
+title('minP chan comb');
+
+subplot(2,1,2);
+hist(P_init(:,indx_minP(1),indx_minP(2)));
+title('minP chan comb');
 
 %% Calculating useful features with the help of fisher score
 caus_fish_val = zeros(n_chan,n_chan);  % will contain fisher values
@@ -423,13 +614,15 @@ labels = [-1*ones(n_no_error,1); 1*ones(n_error,1)];
 
 for i = 1:n_chan
     for j = 1:n_chan
-        x = squeeze(caus_mat_init(:,i,j));
-        mu = mean(x);
-        thresh = std(x) * sqrt(2*log(2));
-        indx = (abs(x-mu)<thresh);  % we want to reject outliers
-        x = x(indx);
-        y = labels(indx);
-        [caus_fish_val(i,j),~] = fisherrank(x,y);
+        if i~=j  % only intersted in relationship between different channels
+            x = squeeze(P_init(:,i,j));
+            mu = mean(x);
+            thresh = std(x) * sqrt(2*log(2));
+            indx = (abs(x-mu)<thresh);  % we want to reject outliers
+            x = x(indx);
+            y = labels(indx);
+            [caus_fish_val(i,j),~] = fisherrank(x,y);
+        end
     end
 end
 
@@ -450,8 +643,8 @@ for j = 1:round(total_trials/10) % across all the features
         caus_mat_final_test = zeros(30,j);
         
         for i = 1: j
-            caus_mat_final_train(:,i) = caus_mat_init(train_indx,locs_causs(i,1),locs_causs(i,2));
-            caus_mat_final_test(:,i) = caus_mat_init(test_indx,locs_causs(i,1),locs_causs(i,2));
+            caus_mat_final_train(:,i) = P_init(train_indx,locs_causs(i,1),locs_causs(i,2));
+            caus_mat_final_test(:,i) = P_init(test_indx,locs_causs(i,1),locs_causs(i,2));
         end
 
         model = trainShrinkLDA(caus_mat_final_train,labels(train_indx,:),lambda);
@@ -461,7 +654,7 @@ for j = 1:round(total_trials/10) % across all the features
 end
 
 
-avg_class_error = mean(class_error,2);  % doing mean across the k fold 10 values
+avg_class_error = median(class_error,2);  % doing mean across the k fold 10 values
 [~,n_caus_feat] = min(avg_class_error); %it will give the index of min value in the array
 
 [max_caus, locs_caus] = maxNvalues(caus_fish_val,n_caus_feat);
@@ -476,27 +669,52 @@ xlabel('ranked features'); % y-axis label
 
 
 for i = 1: n_caus_feat
-    caus_mat_final(:,i) = caus_mat_init(:,locs_caus(i,1),locs_caus(i,2));
-    caus_mat_mean_no_err(i) = squeeze(median(caus_mat_init(1:n_no_error,locs_caus(i,1),locs_caus(i,2)),1));
-    caus_mat_mean_err(i) = squeeze(median(caus_mat_init(n_no_error+1:total_trials,locs_caus(i,1),locs_caus(i,2) ),1));
+    caus_mat_final(:,i) = P_init(:,locs_caus(i,1),locs_caus(i,2));
+    caus_mat_mean_no_err(i) = squeeze(median(P_init(1:n_no_error,locs_caus(i,1),locs_caus(i,2)),1));
+    caus_mat_mean_err(i) = squeeze(median(P_init(n_no_error+1:total_trials,locs_caus(i,1),locs_caus(i,2) ),1));
 end
 
 figure;
-plot(caus_mat_mean_no_err,'b');
+p1 = plot(caus_mat_mean_no_err,'b');
 hold on;
 
-plot(caus_mat_mean_err,'r');
+p2 = plot(caus_mat_mean_err,'r');
 xlabel('feature number');
-ylabel('F value');
+ylabel('P value');
+legend([p1 p2],'No-Error','error')
 
-caus_mat_final_mean = squeeze(median(caus_mat_final))';  % needed for topoplot
 
 
 %% Plotting the connection along with their causal strengths
+caus_mat_final_mean_no_error = squeeze(median(caus_mat_final(1:n_no_error,:)))';  % needed for topoplot
+caus_mat_final_mean_error = squeeze(median(caus_mat_final(n_no_error+1:total_trials,:)))';  % needed for topoplot
+
 ds.chanPairs = locs_caus;
-ds.connectStrength = caus_mat_final_mean;
+ds.connectStrength = caus_mat_final_mean_no_error;
+figure;
+subplot(1,2,1)
 topoplot_connect(ds, EEG.chanlocs);
+title('No-error Causality Map');
 colorbar;
+
+ds.connectStrength = caus_mat_final_mean_error;
+subplot(1,2,2)
+topoplot_connect(ds, EEG.chanlocs);
+title('Error Causality Map');
+colorbar;
+
+%% Plotting the connection along with their Fisher score
+best_fisher_caus = zeros(n_caus_feat,1);
+for i = 1: n_caus_feat
+    best_fisher_caus(i) = caus_fish_val(locs_caus(i,1),locs_caus(i,2));
+end
+ds.chanPairs = locs_caus;
+ds.connectStrength = best_fisher_caus;
+figure;
+topoplot_connect(ds, EEG.chanlocs);
+title('Fisher scores Topoplot');
+colorbar;
+
 
 
 %% Testing the performance of features on training
@@ -511,8 +729,8 @@ figure;
 subplot(3,2,1)
 plot(1:n, v(1:n));
 ylabel('fisher score'); % x-axis label
-xlabel('ranked features'); % y-axis label
-title('temp')
+% xlabel('ranked features'); % y-axis label
+title('temporal (Training)')
 
 % training based on only connectivity features
 model2 = trainShrinkLDA(conn_mat_final,labels,lambda);  % final model
@@ -524,8 +742,8 @@ fprintf('The misclassification rate for connectivity features is: %f \n', perfor
 subplot(3,2,2)
 plot(v2);
 ylabel('fisher score'); % x-axis label
-xlabel('ranked features'); % y-axis label
-title('conn')
+% xlabel('ranked features'); % y-axis label
+title('conn (Training)')
 
 % training based on only connectivity features
 model3 = trainShrinkLDA(caus_mat_final,labels,lambda);  % final model
@@ -535,17 +753,17 @@ fprintf('The misclassification rate for casuality features is: %f \n', performan
 
 [v3, rank3] = fisherrank(caus_mat_final, labels);
 subplot(3,2,3)
-plot(v2);
+plot(v3);
 ylabel('fisher score'); % x-axis label
 xlabel('ranked features'); % y-axis label
-title('caus')
+title('caus (Training)')
 
 
 % training based on temporal + connectivity features
 feature_mat_red_comb = [feature_mat_red caus_mat_final];
 [v4, rank4] = fisherrank(feature_mat_red_comb, labels);
 feature_mat_red_comb4 = zeros(300,30);
-for i = 1:30
+for i = 1:min(30,size(feature_mat_red_comb,2))
     feature_mat_red_comb4(:,i) = feature_mat_red_comb(:,rank4(i));        % feature matrix with optimum number of features
 end
 model4 = trainShrinkLDA(feature_mat_red_comb4,labels,lambda);  % final model
@@ -554,7 +772,7 @@ performance_error = sum(y' ~= labels)/300;  % This is the misclassification rate
 fprintf('The misclassification rate for temporal + casuality features is: %f \n', performance_error);
 
 subplot(3,2,4)
-plot(1:30, v4(1:30));
+plot(1:min(30,size(feature_mat_red_comb,2)), v4(1:min(30,size(feature_mat_red_comb,2))));
 ylabel('fisher score'); % x-axis label
 xlabel('ranked features'); % y-axis label
 title('temp + caus')
@@ -604,7 +822,7 @@ recall_load = load('recall_ground_truth.mat');
 recall_labels = recall_load.labels;
 
 EEG_recall = pop_loadset('filename','recall.set','filepath','../data/');
-EEG_epo_recall = pop_epoch(EEG_recall,{'S  6'},[0.0 1.0]); % Two spaces between S and 6. S6 in this file is the time when the response was made by the user
+EEG_epo_recall = pop_epoch(EEG_recall,{'S  6'},[0.0 0.5]); % Two spaces between S and 6. S6 in this file is the time when the response was made by the user
 
 data_recall = EEG_epo_recall.data;
 total_trials_recall =  size(EEG_epo_recall.data, 3);
@@ -657,10 +875,23 @@ P_corr_recall = zeros(total_trials_recall, n_chan, n_chan); % will indicate the 
 x_lag_recall = zeros(total_trials_recall, n_chan, n_chan);
 y_lag_recall = zeros(total_trials_recall, n_chan, n_chan);
 
+%making the whole data stationary.
+% difference of order 1 is sufficient for individual trials
+order = 1;
+pValues = ones(n_chan,total_trials);
+data_recall_st = zeros(n_chan, size(data_recall,2)-order, total_trials);
+for i = 1:n_chan
+    for j = 1: total_trials
+        data_recall_st(i,:,j) =  diff(data_recall(i,:,j),order);
+        [~,pValues(i,j)] = adftest(data_recall_st(i,:,j));
+    end
+end
+
+
 for i = 1:total_trials_recall % there will be a connectivity matrix for every no error trial
     for j = 1: size(data_Error,1)    % chan1
         for k =  1: size(data_Error,1)  % chan2 
-            [caus_mat_recall(i,j,k),P_recall(i,j,k),P_corr_recall(i,j,k), x_lag_recall(i,j,k), y_lag_recall(i,j,k)] = granger_cause(squeeze(data_recall(j,:,i)),squeeze(data_recall(k,:,i)), 0.05, x_lag_med(j,k), y_lag_med(j,k), x_max_lag, y_max_lag, 1, downsample); % transpose make channels as columns
+            [caus_mat_recall(i,j,k),P_recall(i,j,k),P_corr_recall(i,j,k), x_lag_recall(i,j,k), y_lag_recall(i,j,k)] = granger_cause(squeeze(data_recall_st(j,:,i)),squeeze(data_recall_st(k,:,i)), 0.05, x_lag_med(j,k), y_lag_med(j,k), x_max_lag, y_max_lag, 1, down_samp); % transpose make channels as columns
         end
     end
 end
@@ -671,6 +902,7 @@ for i = 1: n_caus_feat
 end
 
 
+
 %% %%%%%%%%%%%%%%%%%%%%%%%% Testing on Recall %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Prediction based on only temporal features
@@ -679,12 +911,12 @@ performance_error = sum(y_temp ~= recall_labels )/300;  % This is the misclassif
 fprintf('The misclassification rate for temporal features is: %f \n', performance_error);
 
 [v11, rank11] = fisherrank(feature_mat_red_recall, recall_labels);
-figure;
+%figure;
 subplot(3,2,1)
 plot(v11);
-ylabel('fisher score'); % x-axis label
-xlabel('ranked features'); % y-axis label
-title('temp')
+% ylabel('fisher score'); % x-axis label
+% xlabel('ranked features'); % y-axis label
+title('temporal (Testing)')
 
 % Prediction based on only connectivity features
 [y_conn] = predictShrinkLDA(model2,conn_mat_final_recall);
@@ -694,9 +926,9 @@ fprintf('The misclassification rate for connectivity features is: %f \n', perfor
 [v22, rank22] = fisherrank(conn_mat_final_recall, recall_labels);
 subplot(3,2,2)
 plot(v22);
-ylabel('fisher score'); % x-axis label
-xlabel('ranked features'); % y-axis label
-title('conn')
+% ylabel('fisher score'); % x-axis label
+% xlabel('ranked features'); % y-axis label
+title('conn (Testing)')
 
 % prediction based on causality features
 [y_caus] = predictShrinkLDA(model3,caus_mat_final_recall);
@@ -706,15 +938,15 @@ fprintf('The misclassification rate for casuality features is: %f \n', performan
 [v33, rank33] = fisherrank(caus_mat_final_recall, recall_labels);
 subplot(3,2,3)
 plot(v33);
-ylabel('fisher score'); % x-axis label
+% ylabel('fisher score'); % x-axis label
 xlabel('ranked features'); % y-axis label
-title('caus')
+title('caus (Testing)')
 
 
 % prediction based on temporal + causality features 
 feature_mat_red_comb = [feature_mat_red_recall caus_mat_final_recall];
 feature_mat_red_comb4 = zeros(300,30);
-for i = 1:30
+for i = 1:min(30, size(feature_mat_red_comb ,2))
     feature_mat_red_comb4(:,i) = feature_mat_red_comb(:,rank4(i));        % feature matrix with optimum number of features
 end
 [y_all] = predictShrinkLDA(model4,feature_mat_red_comb4);
@@ -761,5 +993,114 @@ plot(v66);
 ylabel('fisher score'); % x-axis label
 xlabel('ranked features'); % y-axis label
 title('temp + conn + caus')
+
+
+
+save('15_15');
+
+
+
+%% Calculation cross-correlation between channel to keep a sanity check on granger causality output
+
+cross_corr_max_lag = 20;
+r_cross_corr = zeros(cross_corr_max_lag*2 +1, total_trials, n_chan, n_chan);  % the more the value, the more the causality
+lag_cross_corr = zeros(cross_corr_max_lag*2 +1, total_trials, n_chan, n_chan); % will indicate the significance of the correlation value 
+r_cross_corr_st = zeros(cross_corr_max_lag*2+1, total_trials, n_chan, n_chan);  % the more the value, the more the causality
+lag_cross_corr_st = zeros(cross_corr_max_lag*2 +1, total_trials, n_chan, n_chan); % will indicate the significance of the correlation value 
+
+
+for i = 1:total_trials
+    for j = 1: n_chan
+        for k = 1: n_chan
+            x = squeeze(data(j,:,i));
+            y = squeeze(data(k,:,i));
+            x_st = squeeze(data_st(j,:,i));
+            y_st = squeeze(data_st(k,:,i));
+            
+            if down_samp 
+                x = downsample(x,4,3);  % phase offset 3
+                y = downsample(y,4,3); % phase offset 3
+                x_st = downsample(x_st,4,3);  % phase offset 3
+                y_st = downsample(y_st,4,3); % phase offset 3
+            end
+           % a = xcorr(x,y,cross_corr_max_lag);
+            [r_cross_corr(:,i,j,k),lag_cross_corr(:,i,j,k)] = xcorr(x,y,cross_corr_max_lag);
+            [r_cross_corr_st(:,i,j,k),lag_cross_corr_st(:,i,j,k)] = xcorr(x_st,y_st,cross_corr_max_lag);
+        end
+    end
+end
+
+t = 3.90625 * [1:cross_corr_max_lag];
+if down_samp 
+    t = t*4;
+end
+
+t = cat(2, -fliplr(t), 0, t);
+
+r_cross_corr_med_no_error = squeeze(median(r_cross_corr(:,1:n_no_error,:,:),2));
+r_cross_corr_med_error = squeeze(median(r_cross_corr(:,n_no_error+1: total_trials,:,:),2));
+
+r_cross_corr_st_med_no_error = squeeze(median(r_cross_corr_st(:,1:n_no_error,:,:),2));
+r_cross_corr_st_med_error = squeeze(median(r_cross_corr_st(:,n_no_error+1: total_trials,:,:),2));
+
+
+%% Plotting cross-correlation
+
+figure;
+subplot(2,2,1);
+for i = 1: n_chan
+    for j = 1: n_chan
+        if i~= j
+            plot(t,r_cross_corr_med_no_error(:,i,j))
+            hold on
+        end
+    end
+end
+title('Cross-corr: No error trials')
+xlabel('Lag (ms)');
+ylabel('Cross-corr');
+ylim([-1000,1000]);
+
+subplot(2,2,2);
+for i = 1: n_chan
+    for j = 1: n_chan
+        if i~= j
+            plot(t,r_cross_corr_med_error(:,i,j))
+            hold on
+        end
+    end
+end
+title('Cross-corr: error trials')
+xlabel('Lag (ms)');
+ylabel('Cross-corr');
+ylim([-1000,1000]);
+
+subplot(2,2,3);
+for i = 1: n_chan
+    for j = 1: n_chan
+        if i~= j
+            plot(t,r_cross_corr_st_med_no_error(:,i,j))
+            hold on
+        end
+    end
+end
+title('Cross-corr: No error stationary trials')
+xlabel('Lag (ms)');
+ylabel('Cross-corr');
+ylim([-60,80]);
+
+subplot(2,2,4);
+for i = 1: n_chan
+    for j = 1: n_chan
+        if i~= j
+            plot(t,r_cross_corr_st_med_error(:,i,j))
+            hold on
+        end
+    end
+end
+title('Cross-corr: Error stationary trials')
+xlabel('Lag (ms)');
+ylabel('Cross-corr');
+ylim([-60,80]);
 
 
